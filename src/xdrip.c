@@ -45,7 +45,12 @@ static char date_app_text[] = "Wed 13 Jan";
 
 // variables for AppSync
 AppSync sync_cgm;
+#ifdef PBL_PLATFORM_APLITE
+#define CHUNK_SIZE 256
+static void bitmapLayerUpdate(struct Layer *layer, GContext *ctx);
+#else
 #define CHUNK_SIZE 1024
+#endif
 // CGM message is 57 bytes
 // Pebble needs additional 62 Bytes?!? Pad with additional 20 bytes
 //#define SYNC_BUFFER_SIZE 1024
@@ -53,7 +58,7 @@ AppSync sync_cgm;
 //static uint8_t sync_buffer_cgm[CHUNK_SIZE];
 //static uint8_t trend_buffer[4096];
 bool doing_trend = false;
-uint8_t trend_chunk[CHUNK_SIZE];
+//uint8_t trend_chunk[CHUNK_SIZE];
 //#ifdef PBL_PLATFORM_BASALT
 uint8_t *trend_buffer = NULL;
 static uint16_t trend_buffer_length = 0;
@@ -1586,11 +1591,19 @@ void inbox_received_handler_cgm(DictionaryIterator *iterator, void *context) {
 			APP_LOG(APP_LOG_LEVEL_INFO, "TREND_DATA: receiving Trend Image chunk");
 			#endif
 			if(trend_buffer) {
+				if ((trend_buffer_length + data->length) <= expected_trend_buffer_length)
+				{
 				memcpy((trend_buffer+trend_buffer_length), data->value->data, data->length);
 				trend_buffer_length += data->length;
 				#ifdef DEBUG_LEVEL
 				APP_LOG(APP_LOG_LEVEL_INFO, "TREND_DATA: received %u of %u so far", trend_buffer_length, expected_trend_buffer_length);
 				#endif
+				} else {
+				#ifdef DEBUG_LEVEL
+				APP_LOG(APP_LOG_LEVEL_INFO, "TREND_DATA: EXCEEDED BUFFER received %u of %u so far", trend_buffer_length, expected_trend_buffer_length);
+				#endif
+		
+				}
 			}
 			#if DEBUG_LEVEL > 1
 			else {
@@ -1623,19 +1636,31 @@ void inbox_received_handler_cgm(DictionaryIterator *iterator, void *context) {
 			#endif
 			
 			APP_LOG(APP_LOG_LEVEL_DEBUG, "TREND_BEGIN: trend_buffer is %lx, trend_buffer_length is %i", (uint32_t)trend_buffer, trend_buffer_length);
+			if ((trend_buffer != NULL) && (trend_buffer_length > 0) && (trend_buffer_length == expected_trend_buffer_length))
+			{
 			bg_trend_bitmap = gbitmap_create_from_png_data(trend_buffer, trend_buffer_length);
+			}
 
 			if(bg_trend_bitmap != NULL) {				
 				#ifdef DEBUG_LEVEL
 				APP_LOG(APP_LOG_LEVEL_INFO, "bg_trend_bitmap created, setting to layer");
 				#endif
 				bitmap_layer_set_bitmap(bg_trend_layer, bg_trend_bitmap);
-			} 
+			}	
+
 			#ifdef DEBUG_LEVEL 
 			else {
 				APP_LOG(APP_LOG_LEVEL_INFO, "bg_trend_bitmap creation FAILED!");
 			}
 			#endif
+			if (trend_buffer)
+			{
+			#ifdef DEBUG_LEVEL
+			APP_LOG(APP_LOG_LEVEL_INFO, "Free trend buffer 2");
+			#endif
+			free(trend_buffer);
+			trend_buffer = NULL;
+			}
 			break;
 //		#endif
 		case CGM_MESSAGE_KEY:
@@ -1780,6 +1805,50 @@ void handle_second_tick_cgm(struct tm* tick_time_cgm, TimeUnits units_changed_cg
 	
 } // end handle_minute_tick_cgm
 
+
+#ifdef PBL_PLATFORM_APLITE
+
+static uint8_t breverse(uint8_t b); 
+static uint8_t breverse(uint8_t b) {
+   b = (b & 0xF0) >> 4 | (b & 0x0F) << 4;
+   b = (b & 0xCC) >> 2 | (b & 0x33) << 2;
+   b = (b & 0xAA) >> 1 | (b & 0x55) << 1;
+   return b;
+}
+
+static void bitmapLayerUpdate(struct Layer *layer, GContext *ctx){
+  GBitmap *framebuffer;
+  const GBitmap *graphic = bitmap_layer_get_bitmap((BitmapLayer *)layer);
+  int height;
+  uint8_t finalBits;
+  uint8_t *bfr, *bitmap;
+
+  framebuffer = graphics_capture_frame_buffer(ctx);
+  if (framebuffer == NULL){
+    APP_LOG(APP_LOG_LEVEL_DEBUG, "capture frame buffer failed!!");
+  } else {
+  //  APP_LOG(APP_LOG_LEVEL_DEBUG, "capture frame buffer succeeded %i vs %i and %i vs %i with bpw: %i vs %i",gbitmap_get_bounds(graphic).size.w,gbitmap_get_bounds(framebuffer).size.w,gbitmap_get_bounds(graphic).size.h,gbitmap_get_bounds(framebuffer).size.h, gbitmap_get_bytes_per_row(graphic),gbitmap_get_bytes_per_row(framebuffer));
+  }
+  height = gbitmap_get_bounds(graphic).size.h;
+  int start_offset=gbitmap_get_bytes_per_row(framebuffer)*30;
+
+  for (int yindex =0; yindex < height; yindex++){
+
+
+    for ( unsigned int xindex = 0; xindex < gbitmap_get_bytes_per_row(graphic); xindex+=1){
+      bfr = (uint8_t*)(gbitmap_get_data(framebuffer)+start_offset+(yindex * gbitmap_get_bytes_per_row(framebuffer))+xindex);
+
+      bitmap = (uint8_t*)(gbitmap_get_data(graphic)+(yindex * gbitmap_get_bytes_per_row(graphic))+xindex);
+      finalBits = breverse(*bitmap) ^ *bfr;
+      // APP_LOG(APP_LOG_LEVEL_DEBUG, "bfr: %0x, bitmsp: %0x, finalBits: %x", (unsigned int)bfr, (unsigned int)bitmap, finalBits );
+
+      *bfr = finalBits;
+    }
+  }
+  graphics_release_frame_buffer(ctx, framebuffer);
+}
+#endif
+
 void window_load_cgm(Window *window_cgm) {
 	//APP_LOG(APP_LOG_LEVEL_INFO, "WINDOW LOAD");
 	
@@ -1820,19 +1889,17 @@ void window_load_cgm(Window *window_cgm) {
 	layer_add_child(window_layer_cgm, bitmap_layer_get_layer(icon_layer));
 
 	//create the bg_trend_layer
-	#ifdef PBL_PLATFORM_BASALT
 	#ifdef DEBUG_LEVEL
 	APP_LOG(APP_LOG_LEVEL_INFO, "Creating BG Trend Bitmap layer");
 	#endif
+	#ifdef PBL_PLATFORM_BASALT
 	bg_trend_layer = bitmap_layer_create(GRect(0,0,144,84));
 	bitmap_layer_set_compositing_mode(bg_trend_layer, GCompOpSet);
-/*	#ifdef PBL_PLATFORM_APLITE
-	bg_trend_layer = bitmap_layer_create(GRect(0,0,144,84));
-	bitmap_layer_set_compositing_mode(bg_trend_layer, GCompOpAnd);
+	layer_add_child(window_layer_cgm, bitmap_layer_get_layer(bg_trend_layer));
 	#endif
-	bg_trend_bitmap = gbitmap_create_blank(GSize(144,84), GBitmapFormat8Bit);
-	bitmap_layer_set_bitmap(bg_trend_layer, bg_trend_bitmap);
-*/	layer_add_child(window_layer_cgm, bitmap_layer_get_layer(bg_trend_layer));
+	#ifdef PBL_PLATFORM_APLITE
+	bg_trend_layer = bitmap_layer_create(GRect(0,24,144,64));
+	layer_set_update_proc(bitmap_layer_get_layer(bg_trend_layer),bitmapLayerUpdate);
 	#endif
 
 	// DELTA BG
@@ -1847,7 +1914,13 @@ void window_load_cgm(Window *window_cgm) {
 	#endif
 	text_layer_set_background_color(delta_layer, GColorClear);
 	text_layer_set_font(delta_layer, fonts_get_system_font(FONT_KEY_GOTHIC_28));
+
+	#ifdef PBL_PLATFORM_APLITE
+	text_layer_set_text_alignment(delta_layer, GTextAlignmentRight);
+	#else
 	text_layer_set_text_alignment(delta_layer, GTextAlignmentCenter);
+	#endif
+
 	layer_add_child(window_layer_cgm, text_layer_get_layer(delta_layer));
 
 	// MESSAGE
@@ -1891,7 +1964,12 @@ void window_load_cgm(Window *window_cgm) {
 	APP_LOG(APP_LOG_LEVEL_INFO, "Creating CGM Time Ago Bitmap layer");
 	#endif
 	//cgmtime_layer = text_layer_create(GRect(5, 58, 40, 24));
+        #ifdef PBL_PLATFORM_APLITE
+	cgmtime_layer = text_layer_create(GRect(104, 58, 40, 24));
+	#else
 	cgmtime_layer = text_layer_create(GRect(52, 58, 40, 24));
+	#endif
+
 	#ifdef PBL_COLOR
 	text_layer_set_text_color(cgmtime_layer, GColorDukeBlue);
 	text_layer_set_background_color(cgmtime_layer, GColorClear);
@@ -1904,6 +1982,10 @@ void window_load_cgm(Window *window_cgm) {
 	text_layer_set_text_alignment(cgmtime_layer, GTextAlignmentCenter);
 	layer_add_child(window_layer_cgm, text_layer_get_layer(cgmtime_layer));
 
+	#ifdef PBL_PLATFORM_APLITE
+	// top layer on pebble classic
+	layer_add_child(window_layer_cgm, bitmap_layer_get_layer(bg_trend_layer));
+	#endif
 
 	// CURRENT ACTUAL TIME FROM WATCH
 	#ifdef DEBUG_LEVEL
@@ -2091,7 +2173,7 @@ static void init_cgm(void) {
 	
 	//APP_LOG(APP_LOG_LEVEL_INFO, "INIT CODE, ABOUT TO CALL APP MSG OPEN");
 	#ifdef PBL_PLATFORM_APLITE
-	app_message_open(2048, 2048);
+	app_message_open(1024, 1024);
 	#else 
 	app_message_open(app_message_inbox_size_maximum(), app_message_outbox_size_maximum());
 	#endif
