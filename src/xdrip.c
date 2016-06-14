@@ -2085,7 +2085,7 @@ static void bitmapLayerUpdate(struct Layer *layer, GContext *ctx)
                     unsigned int fb_bytes_per_row = gbitmap_get_bytes_per_row(framebuffer);
                     unsigned int gbitmap_bytes_per_row = gbitmap_get_bytes_per_row(graphic);
 
-                    bfstart += fb_bytes_per_row*30; // how far down screen to start
+                    bfstart += fb_bytes_per_row*34; // how far down screen to start
 
                     for (int yindex =0; yindex < height; yindex++)
                         {
