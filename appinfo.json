@@ -1,7 +1,7 @@
 {
   "uuid": "79f8ecb3-7214-4bfc-b996-cb95148ee6d3",
-  "shortName": "xDrip Watch Face",
-  "longName": "xDrip Watch Face",
+  "shortName": "xDrip+ Watch Face",
+  "longName": "xDrip+ Watch Face",
   "companyName": "Nightscout Foundation",
   "versionCode": 1,
   "versionLabel": "1.4",
@@ -10,7 +10,8 @@
   },
   "targetPlatforms": [
     "aplite",
-    "basalt"
+    "basalt",
+    "diorite"
   ],
   "sdkVersion": "3",
   "appKeys": {
@@ -28,7 +29,7 @@
     "platform": 1001,
     "version" : 1002
   },
-  "capabilities": [
+  "capabilities": [ "health" 
   ],
   "projectType": "native",
   "resources": {

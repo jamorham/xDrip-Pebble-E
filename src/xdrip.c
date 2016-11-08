@@ -1,10 +1,12 @@
 #include "pebble.h"
 
+// IDE DEBUG ONLY
+//#define PBL_HEALTH
 
 /* The line below will set the debug message level.
 Make sure you set this to 0 before building a release. */
 
-#define DEBUG_LEVEL 1
+//#define DEBUG_LEVEL 1
 
 // global window variables
 // ANYTHING THAT IS CALLED BY PEBBLE API HAS TO BE NOT STATIC
@@ -45,6 +47,21 @@ static char date_app_text[] = "Wed 13 Jan";
 
 // variables for AppSync
 AppSync sync_cgm;
+
+
+#if defined(PBL_HEALTH)
+static void health_handler(HealthEventType event, void *context); 
+static void start_data_log();
+static void stop_data_log();
+static void restart_data_log();
+static DataLoggingSessionRef s_session_heartrate;
+static DataLoggingSessionRef s_session_movement;
+static HealthValue laststeps = 0;
+static HealthValue lastbpm = 0;
+#define HEARTRATE_LOG 101
+#define MOVEMENT_LOG 103
+#endif
+
 #ifdef PBL_PLATFORM_APLITE
 #define CHUNK_SIZE 256
 static void bitmapLayerUpdate(struct Layer *layer, GContext *ctx);
@@ -254,7 +271,7 @@ static const uint8_t NONE_TIMEAGO_ICON_INDX = 0;
 static const uint8_t PHONEON_ICON_INDX = 1;
 static const uint8_t PHONEOFF_ICON_INDX = 2;
 */
-#ifdef DEBUG_LEVEL
+//#ifdef DEBUG_LEVEL
 static char *translate_app_error(AppMessageResult result)
 {
     switch (result)
@@ -310,7 +327,7 @@ static char *translate_dict_error(DictionaryResult result)
             return "DICT UNKNOWN ERROR";
         }
 }
-#endif
+//#endif
 
 int myAtoi(char *str)
 {
@@ -1620,8 +1637,8 @@ static void send_cmd_cgm(void)
 #ifdef DEBUG_LEVEL
     APP_LOG(APP_LOG_LEVEL_INFO, "send_cmd_cgm called.");
 #endif
-    AppMessageResult sendcmd_openerr = APP_MSG_OK;
     AppMessageResult sendcmd_senderr = APP_MSG_OK;
+    AppMessageResult sendcmd_openerr = APP_MSG_OK;
 
     sendcmd_openerr = app_message_outbox_begin(&iter);
     if (sendcmd_openerr != APP_MSG_OK)
@@ -1644,15 +1661,15 @@ static void send_cmd_cgm(void)
     //APP_LOG(APP_LOG_LEVEL_INFO, "SEND CMD IN, ABOUT TO OPEN APP MSG OUTBOX");
 
 
-    sendcmd_senderr = app_message_outbox_send();
 
-#ifdef DEBUG_LEVEL
+//#ifdef DEBUG_LEVEL
+    sendcmd_senderr = app_message_outbox_send();
     if (sendcmd_senderr != APP_MSG_OK && sendcmd_senderr != APP_MSG_BUSY && sendcmd_senderr != APP_MSG_SEND_REJECTED)
         {
             APP_LOG(APP_LOG_LEVEL_INFO, "WATCH SENDCMD SEND ERROR");
             APP_LOG(APP_LOG_LEVEL_DEBUG, "WATCH SENDCMD SEND ERR CODE: %i RES: %s", sendcmd_senderr, translate_app_error(sendcmd_senderr));
         }
-#endif
+//#endif
     //free(iter);
     //APP_LOG(APP_LOG_LEVEL_INFO, "SEND CMD OUT, SENT MSG TO APP");
 
@@ -1705,7 +1722,10 @@ void inbox_received_handler_cgm(DictionaryIterator *iterator, void *context)
 #endif
                     strncpy(last_bg, data->value->cstring, BG_MSGSTR_SIZE);
                     load_bg();
-                    break; // break for CGM_BG_KEY
+#if defined(PBL_HEALTH)
+		     restart_data_log(); // flush the data
+#endif
+		     break; // break for CGM_BG_KEY
 
                 case CGM_TCGM_KEY:
                     ;
@@ -2026,7 +2046,7 @@ void handle_second_tick_cgm(struct tm* tick_time_cgm, TimeUnits units_changed_cg
 } // end handle_minute_tick_cgm
 
 
-#ifdef PBL_PLATFORM_APLITE
+#ifdef PBL_BW
 
 static uint8_t breverse(uint8_t b);
 static uint8_t breverse(uint8_t b)
@@ -2059,7 +2079,9 @@ static void bitmapLayerUpdate(struct Layer *layer, GContext *ctx)
 
             if (graphic == NULL)
                 {
+#ifdef DEBUG_LEVEL
                     APP_LOG(APP_LOG_LEVEL_DEBUG, "GRAPHIC IS NULL!!");
+#endif
                 }
             else
                 {
@@ -2159,7 +2181,8 @@ void window_load_cgm(Window *window_cgm)
     bitmap_layer_set_compositing_mode(bg_trend_layer, GCompOpSet);
     layer_add_child(window_layer_cgm, bitmap_layer_get_layer(bg_trend_layer));
 #endif
-#ifdef PBL_PLATFORM_APLITE
+// APLITE and DIORITE
+#ifdef PBL_BW
     bg_trend_layer = bitmap_layer_create(GRect(0,24,144,64));
     layer_set_update_proc(bitmap_layer_get_layer(bg_trend_layer),bitmapLayerUpdate);
 #endif
@@ -2177,7 +2200,7 @@ void window_load_cgm(Window *window_cgm)
     text_layer_set_background_color(delta_layer, GColorClear);
     text_layer_set_font(delta_layer, fonts_get_system_font(FONT_KEY_GOTHIC_28));
 
-#ifdef PBL_PLATFORM_APLITE
+#ifdef PBL_BW
     text_layer_set_text_alignment(delta_layer, GTextAlignmentRight);
 #else
     text_layer_set_text_alignment(delta_layer, GTextAlignmentCenter);
@@ -2226,7 +2249,7 @@ void window_load_cgm(Window *window_cgm)
     APP_LOG(APP_LOG_LEVEL_INFO, "Creating CGM Time Ago Bitmap layer");
 #endif
     //cgmtime_layer = text_layer_create(GRect(5, 58, 40, 24));
-#ifdef PBL_PLATFORM_APLITE
+#ifdef PBL_BW
     cgmtime_layer = text_layer_create(GRect(104, 58, 40, 24));
 #else
     cgmtime_layer = text_layer_create(GRect(52, 58, 40, 24));
@@ -2244,7 +2267,7 @@ void window_load_cgm(Window *window_cgm)
     text_layer_set_text_alignment(cgmtime_layer, GTextAlignmentCenter);
     layer_add_child(window_layer_cgm, text_layer_get_layer(cgmtime_layer));
 
-#ifdef PBL_PLATFORM_APLITE
+#ifdef PBL_BW
     // top layer on pebble classic
     layer_add_child(window_layer_cgm, bitmap_layer_get_layer(bg_trend_layer));
 #endif
@@ -2455,6 +2478,19 @@ static void init_cgm(void)
     const bool animated_cgm = true;
     window_stack_push(window_cgm, animated_cgm);
 
+#if defined(PBL_HEALTH)
+    start_data_log();
+// Attempt to subscribe 
+    if (!health_service_events_subscribe(health_handler, NULL)) {
+        APP_LOG(APP_LOG_LEVEL_ERROR, "Health not available!");
+    } else {
+// health ok
+    }
+#else
+    APP_LOG(APP_LOG_LEVEL_ERROR, "Health service not supported!");
+#endif
+
+
     //APP_LOG(APP_LOG_LEVEL_INFO, "INIT CODE OUT");
 }	// end init_cgm
 
@@ -2462,6 +2498,10 @@ static void deinit_cgm(void)
 {
     //APP_LOG(APP_LOG_LEVEL_INFO, "DEINIT CODE IN");
 
+#if defined(PBL_HEALTH)
+// Finish the session and sync data if appropriate
+    stop_data_log();
+#endif
     // unsubscribe to the tick timer service
     //APP_LOG(APP_LOG_LEVEL_INFO, "DEINIT, UNSUBSCRIBE TICK TIMER");
     tick_timer_service_unsubscribe();
@@ -2503,6 +2543,88 @@ static void deinit_cgm(void)
 
     //APP_LOG(APP_LOG_LEVEL_INFO, "DEINIT CODE OUT");
 } // end deinit_cgm
+
+#if defined(PBL_HEALTH)
+
+static void write_log(int id, int value) {
+
+    uint32_t d[2] = {(uint32_t) time(NULL), value};
+
+    DataLoggingResult result = data_logging_log((id == HEARTRATE_LOG) ? s_session_heartrate : s_session_movement, &d, 2);
+    if (result != DATA_LOGGING_SUCCESS) {
+        APP_LOG(APP_LOG_LEVEL_ERROR, "Error logging to queue: %d value %d data: err:%d", (int) id, (int) value,
+                (int) result);
+    }
+}
+
+static void health_handler(HealthEventType event, void *context) {
+
+    // Which type of event occurred?
+    switch (event) {
+        case HealthEventSignificantUpdate:
+            APP_LOG(APP_LOG_LEVEL_DEBUG,
+                    "New HealthService HealthEventSignificantUpdate event");
+            break;
+        case HealthEventMovementUpdate:
+            APP_LOG(APP_LOG_LEVEL_DEBUG,
+                    "New HealthService HealthEventMovementUpdate event");
+            
+            HealthValue steps = health_service_sum_today(HealthMetricStepCount);
+
+            if (steps != laststeps) {
+                APP_LOG(APP_LOG_LEVEL_INFO, "New Steps daily total: %d", (int) steps);
+                laststeps = steps;
+                write_log(MOVEMENT_LOG, steps);
+            } // if new data
+            break;
+            
+        case HealthEventSleepUpdate:
+            APP_LOG(APP_LOG_LEVEL_DEBUG,
+                    "New HealthService HealthEventSleepUpdate event");
+            break;
+        case HealthEventHeartRateUpdate:
+            APP_LOG(APP_LOG_LEVEL_INFO,
+                    "New HealthService HealthEventHeartRateUpdate event");
+
+            HealthServiceAccessibilityMask hr = health_service_metric_accessible(HealthMetricHeartRateBPM, time(NULL),
+                                                                                 time(NULL));
+            if (hr & HealthServiceAccessibilityMaskAvailable) {
+                HealthValue value = health_service_peek_current_value(HealthMetricHeartRateBPM);
+
+                if ((value > 0) && (value != lastbpm)) {
+                    lastbpm = value;
+                    APP_LOG(APP_LOG_LEVEL_INFO, "New BPM: %d", (int) value);
+                    write_log(HEARTRATE_LOG, value);
+                }
+            }
+            break;
+        case HealthEventMetricAlert:
+            APP_LOG(APP_LOG_LEVEL_DEBUG,
+                    "New HealthService HealthEventMetricAlert event");
+            break;
+        default:
+            APP_LOG(APP_LOG_LEVEL_INFO, "Received other health event not handled %d", event);
+            break;
+    }
+}
+
+static void start_data_log() {
+    s_session_heartrate = data_logging_create(HEARTRATE_LOG, DATA_LOGGING_UINT, sizeof(uint32_t), true);
+    s_session_movement = data_logging_create(MOVEMENT_LOG, DATA_LOGGING_UINT, sizeof(uint32_t), true);
+}
+
+static void stop_data_log() {
+    data_logging_finish(s_session_heartrate);
+    data_logging_finish(s_session_movement);
+}
+
+static void restart_data_log() {
+    stop_data_log();
+    start_data_log();
+}
+
+#endif
+
 
 int main(void)
 {
