@@ -50,7 +50,7 @@ AppSync sync_cgm;
 
 
 #if defined(PBL_HEALTH)
-static void health_handler(HealthEventType event, void *context); 
+void health_handler(HealthEventType event, void *context);
 static void start_data_log();
 static void stop_data_log();
 static void restart_data_log();
@@ -58,15 +58,16 @@ static DataLoggingSessionRef s_session_heartrate;
 static DataLoggingSessionRef s_session_movement;
 static HealthValue laststeps = 0;
 static HealthValue lastbpm = 0;
+static time_t last_movement_time = 0;
 #define HEARTRATE_LOG 101
 #define MOVEMENT_LOG 103
 #endif
 
 #ifdef PBL_PLATFORM_APLITE
-#define CHUNK_SIZE 256
+//#define CHUNK_SIZE 256
 static void bitmapLayerUpdate(struct Layer *layer, GContext *ctx);
 #else
-#define CHUNK_SIZE 1024
+//#define CHUNK_SIZE 1024
 #endif
 // CGM message is 57 bytes
 // Pebble needs additional 62 Bytes?!? Pad with additional 20 bytes
@@ -1782,12 +1783,13 @@ void inbox_received_handler_cgm(DictionaryIterator *iterator, void *context)
 #endif
                     trend_buffer = malloc(expected_trend_buffer_length);
                     trend_buffer_length = 0;
-#if DEBUG_LEVEL > 1
+
                     if(trend_buffer == NULL)
                         {
                             APP_LOG(APP_LOG_LEVEL_DEBUG, "TREND_BEGIN: Could not allocate trend_buffer");
                             break;
                         }
+#ifdef DEBUG_LEVEL
                     APP_LOG(APP_LOG_LEVEL_DEBUG, "TREND_BEGIN: trend_buffer is %lx, trend_buffer_length is %i", (uint32_t)trend_buffer, trend_buffer_length);
 #endif
                     break;
@@ -1813,7 +1815,7 @@ void inbox_received_handler_cgm(DictionaryIterator *iterator, void *context)
 
                                 }
                         }
-#if DEBUG_LEVEL > 1
+#ifdef DEBUG_LEVEL
                     else
                         {
                             APP_LOG(APP_LOG_LEVEL_DEBUG, "TREND_DATA: trend_buffer not allocated, ignoring");
@@ -2471,7 +2473,8 @@ static void init_cgm(void)
 #ifdef PBL_PLATFORM_APLITE
     app_message_open(512, 1024);
 #else
-    app_message_open(app_message_inbox_size_maximum(), app_message_outbox_size_maximum());
+    //app_message_open(app_message_inbox_size_maximum(), app_message_outbox_size_maximum());
+    app_message_open(2048, 2048);
 #endif
     //APP_LOG(APP_LOG_LEVEL_INFO, "INIT CODE, APP MSG OPEN DONE");
 
@@ -2548,16 +2551,24 @@ static void deinit_cgm(void)
 
 static void write_log(int id, int value) {
 
-    uint32_t d[2] = {(uint32_t) time(NULL), value};
+    if ((id == MOVEMENT_LOG) && ((time(NULL) - last_movement_time) < 60)) {
+        return;
+    }
+    last_movement_time = time(NULL);
 
-    DataLoggingResult result = data_logging_log((id == HEARTRATE_LOG) ? s_session_heartrate : s_session_movement, &d, 2);
+    uint32_t d[2] = {(uint32_t) last_movement_time, (uint32_t) value};
+
+    APP_LOG(APP_LOG_LEVEL_INFO, "Logging data");
+
+    DataLoggingResult result = data_logging_log((id == HEARTRATE_LOG) ? s_session_heartrate : s_session_movement, &d,
+                                                2);
     if (result != DATA_LOGGING_SUCCESS) {
         APP_LOG(APP_LOG_LEVEL_ERROR, "Error logging to queue: %d value %d data: err:%d", (int) id, (int) value,
                 (int) result);
     }
 }
 
-static void health_handler(HealthEventType event, void *context) {
+void health_handler(HealthEventType event, void *context) {
 
     // Which type of event occurred?
     switch (event) {
@@ -2571,7 +2582,7 @@ static void health_handler(HealthEventType event, void *context) {
             
             HealthValue steps = health_service_sum_today(HealthMetricStepCount);
 
-            if (steps != laststeps) {
+            if ((steps != laststeps) && (abs(steps - laststeps) > 20)) {
                 APP_LOG(APP_LOG_LEVEL_INFO, "New Steps daily total: %d", (int) steps);
                 laststeps = steps;
                 write_log(MOVEMENT_LOG, steps);
@@ -2609,11 +2620,15 @@ static void health_handler(HealthEventType event, void *context) {
 }
 
 static void start_data_log() {
+APP_LOG(APP_LOG_LEVEL_DEBUG,
+                    "starting log");
     s_session_heartrate = data_logging_create(HEARTRATE_LOG, DATA_LOGGING_UINT, sizeof(uint32_t), true);
     s_session_movement = data_logging_create(MOVEMENT_LOG, DATA_LOGGING_UINT, sizeof(uint32_t), true);
 }
 
 static void stop_data_log() {
+   APP_LOG(APP_LOG_LEVEL_DEBUG,
+                    "Stopping log");
     data_logging_finish(s_session_heartrate);
     data_logging_finish(s_session_movement);
 }
