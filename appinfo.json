@@ -11,6 +11,7 @@
   "targetPlatforms": [
     "aplite",
     "basalt",
+    "chalk",
     "diorite"
   ],
   "sdkVersion": "3",
