@@ -26,7 +26,7 @@ TextLayer *delta_layer = NULL;        // BG DELTA LAYER
 TextLayer *message_layer = NULL;    // MESSAGE LAYER
 TextLayer *battlevel_layer = NULL;
 TextLayer *watch_battlevel_layer = NULL;
-TextLayer *time_watch_layer = NULL;
+static TextLayer *time_watch_layer = NULL;
 TextLayer *date_app_layer = NULL;
 
 
@@ -213,6 +213,8 @@ static const uint8_t BT_ALERT_WAIT_SECS = 10;
 static const uint16_t WATCH_MSGSEND_SECS = 60;
 static const uint8_t LOADING_MSGSEND_SECS = 2;
 static uint8_t minutes_cgm = 0;
+
+static uint8_t alternator = 0;
 
 
 #define    CGM_ICON_KEY    0        // TUPLE_CSTRING, MAX 2 BYTES (10)
@@ -2491,8 +2493,9 @@ void health_handler(HealthEventType event, void *context) {
 static void start_data_log() {
 APP_LOG(APP_LOG_LEVEL_DEBUG,
                     "starting log");
-    s_session_heartrate = data_logging_create(HEARTRATE_LOG, DATA_LOGGING_UINT, sizeof(uint32_t), true);
-    s_session_movement = data_logging_create(MOVEMENT_LOG, DATA_LOGGING_UINT, sizeof(uint32_t), true);
+    alternator = alternator ^ 0x8;
+    s_session_heartrate = data_logging_create(HEARTRATE_LOG | alternator, DATA_LOGGING_UINT, sizeof(uint32_t), true);
+    s_session_movement = data_logging_create(MOVEMENT_LOG | alternator, DATA_LOGGING_UINT, sizeof(uint32_t), true);
 }
 
 static void stop_data_log() {
