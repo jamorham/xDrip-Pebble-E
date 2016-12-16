@@ -462,7 +462,7 @@ static void battery_handler(BatteryChargeState charge_state) {
 
     static char watch_battlevel_percent[9];
 #ifdef PBL_ROUND
-    snprintf(watch_battlevel_percent, BATTLEVEL_FORMATTED_SIZE, "%i%% ", charge_state.charge_percent);
+    snprintf(watch_battlevel_percent, BATTLEVEL_FORMATTED_SIZE, "W:%i%% ", charge_state.charge_percent);
 #elif PBL_COLOR
     snprintf(watch_battlevel_percent, BATTLEVEL_FORMATTED_SIZE, "W:%i%% ", charge_state.charge_percent);
 #else
@@ -1473,7 +1473,10 @@ static void load_battlevel() {
 #ifdef DEBUG_LEVEL
     APP_LOG(APP_LOG_LEVEL_DEBUG, "SETTING BATTLEVEL to %s", battlevel_percent);
 #endif
+// don't display phone battery % on pebble round
+#ifndef PBL_ROUND
     text_layer_set_text(battlevel_layer, battlevel_percent);
+#endif
 #ifdef PBL_COLOR
     if ( (current_battlevel > 0) && (current_battlevel <= 30) )
         {
@@ -2026,7 +2029,7 @@ void window_load_cgm(Window *window_cgm) {
     APP_LOG(APP_LOG_LEVEL_INFO, "Creating Delta BG Text layer");
 #endif
 #ifdef PBL_ROUND
-    delta_layer = text_layer_create(GRect(0, 36, 123, 50));
+    delta_layer = text_layer_create(GRect(0, 36, 180, 50));
 #else
     delta_layer = text_layer_create(GRect(0, 36, 143, 50));
 #endif
@@ -2044,7 +2047,7 @@ void window_load_cgm(Window *window_cgm) {
 #ifdef PBL_BW
     text_layer_set_text_alignment(delta_layer, GTextAlignmentRight);
 #elif PBL_ROUND
-    text_layer_set_text_alignment(delta_layer, GTextAlignmentRight);
+    text_layer_set_text_alignment(delta_layer, GTextAlignmentCenter);
 #else
     text_layer_set_text_alignment(delta_layer, GTextAlignmentCenter);
 #endif
@@ -2099,7 +2102,7 @@ void window_load_cgm(Window *window_cgm) {
 #ifdef PBL_BW
     cgmtime_layer = text_layer_create(GRect(104, 58, 40, 24));
 #elif PBL_ROUND
-    cgmtime_layer = text_layer_create(GRect(114, 58, 40, 24));
+    cgmtime_layer = text_layer_create(GRect(5, 58, 40, 24));
 #else
     cgmtime_layer = text_layer_create(GRect(52, 58, 40, 24));
 #endif
@@ -2169,7 +2172,7 @@ void window_load_cgm(Window *window_cgm) {
     APP_LOG(APP_LOG_LEVEL_INFO, "Creating Phone Battery Text layer");
 #endif
 #ifdef PBL_ROUND
-    battlevel_layer = text_layer_create(GRect(48, 150, 55, 18));
+    battlevel_layer = text_layer_create(GRect(48, 150, 1, 1));
     text_layer_set_text_color(battlevel_layer, GColorGreen);
     text_layer_set_background_color(battlevel_layer, GColorClear);
 #elif PBL_COLOR
@@ -2196,7 +2199,7 @@ void window_load_cgm(Window *window_cgm) {
     BatteryChargeState charge_state = battery_state_service_peek();
     //snprintf(watch_battlevel_percent, BATTLEVEL_FORMATTED_SIZE, "W:%i%%", charge_state.charge_percent);
 #ifdef PBL_ROUND
-    watch_battlevel_layer = text_layer_create(GRect(82, 150, 62, 18));
+    watch_battlevel_layer = text_layer_create(GRect(45, 150, 90, 18));
     APP_LOG(APP_LOG_LEVEL_INFO, "ROUND DETECTED");
 #elif  PBL_COLOR
     watch_battlevel_layer = text_layer_create(GRect(72, 150, 72, 18));
@@ -2206,7 +2209,11 @@ void window_load_cgm(Window *window_cgm) {
     watch_battlevel_layer = text_layer_create(GRect(81, 148, 59, 18));
 #endif
     text_layer_set_font(watch_battlevel_layer, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD));
+#ifdef PBL_ROUND
+    text_layer_set_text_alignment(watch_battlevel_layer, GTextAlignmentCenter);
+#else
     text_layer_set_text_alignment(watch_battlevel_layer, GTextAlignmentRight);
+#endif
 #ifdef PBL_COLOR
     if(charge_state.is_charging)
         {
@@ -2368,6 +2375,7 @@ static void deinit_cgm(void) {
 
 #if defined(PBL_HEALTH)
     // Finish the session and sync data if appropriate
+        health_service_events_unsubscribe();
         stop_data_log();
 #endif
     // unsubscribe to the tick timer service
