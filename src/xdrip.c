@@ -122,6 +122,7 @@ static bool AppSyncErrAlert = false;
 static bool AppMsgInDropAlert = false;
 static bool AppMsgOutFailAlert = false;
 static bool BluetoothAlert = false;
+static bool BluetoothVibrate = true;
 static bool BT_timer_pop = false;
 //static bool CGMOffAlert = false;
 static bool PhoneOffAlert = false;
@@ -228,6 +229,7 @@ static uint8_t alternator = 0;
 #define    CGM_TREND_DATA_KEY    8        // TUPLE_BYTE[], No Maximum, based on value found in CGM_TREND_DATA_KEY
 #define    CGM_TREND_END_KEY    9        // TUPLE_INT, always 0.
 #define CGM_MESSAGE_KEY        10
+#define CGM_BLUETOOTH_KEY        111    // whether to vibrate no bluetooth
 #define CGM_VIBE_KEY        11
 #define CGM_SYNC_KEY        1000    // key pebble will use to request an update.
 #define PBL_PLATFORM        1001    // key pebble will use to send it's platform
@@ -634,7 +636,9 @@ void handle_bluetooth_cgm(bool bt_connected) {
 #ifdef DEBUG_LEVEL
         APP_LOG(APP_LOG_LEVEL_INFO, "BT HANDLER: TIMER POP, NO BLUETOOTH");
 #endif
-        alert_handler_cgm(BTOUT_VIBE);
+        if (BluetoothVibrate) {
+            alert_handler_cgm(BTOUT_VIBE);
+        }
         BluetoothAlert = true;
 
         // Reset timer pop
@@ -1755,6 +1759,10 @@ void inbox_received_handler_cgm(DictionaryIterator *iterator, void *context) {
                     layer_set_hidden((Layer *) message_layer, false);
                     layer_set_hidden((Layer *) delta_layer, true);
                 }
+                break;
+
+            case CGM_BLUETOOTH_KEY:
+                BluetoothVibrate = (data->value->uint8 > 0);
                 break;
 
             case CGM_VIBE_KEY:
