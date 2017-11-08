@@ -62,6 +62,9 @@ static time_t last_movement_time = 0;
 #define MOVEMENT_LOG 103
 #endif
 
+static void health_subscribe();
+static void health_unsubscribe();
+
 #ifdef PBL_PLATFORM_APLITE
 //#define CHUNK_SIZE 256
 static void bitmapLayerUpdate(struct Layer *layer, GContext *ctx);
@@ -123,10 +126,12 @@ static bool AppMsgInDropAlert = false;
 static bool AppMsgOutFailAlert = false;
 static bool BluetoothAlert = false;
 static bool BluetoothVibrate = true;
+static bool CollectHealth = false;
 static bool BT_timer_pop = false;
 //static bool CGMOffAlert = false;
 static bool PhoneOffAlert = false;
 static bool LowBatteryAlert = false;
+static bool old_state = false;
 
 // global constants for time durations
 static const uint8_t MINUTEAGO = 60;
@@ -230,6 +235,7 @@ static uint8_t alternator = 0;
 #define    CGM_TREND_END_KEY    9        // TUPLE_INT, always 0.
 #define CGM_MESSAGE_KEY        10
 #define CGM_BLUETOOTH_KEY        111    // whether to vibrate no bluetooth
+#define CGM_COLLECT_HEALTH_KEY        112    // whether to log health data
 #define CGM_VIBE_KEY        11
 #define CGM_SYNC_KEY        1000    // key pebble will use to request an update.
 #define PBL_PLATFORM        1001    // key pebble will use to send it's platform
@@ -1596,7 +1602,7 @@ void inbox_received_handler_cgm(DictionaryIterator *iterator, void *context) {
                 strncpy(last_bg, data->value->cstring, BG_MSGSTR_SIZE);
                 load_bg();
 #if defined(PBL_HEALTH)
-                restart_data_log(); // flush the data
+                if (CollectHealth) restart_data_log(); // flush the data
 #endif
                 break; // break for CGM_BG_KEY
 
@@ -1762,7 +1768,23 @@ void inbox_received_handler_cgm(DictionaryIterator *iterator, void *context) {
                 break;
 
             case CGM_BLUETOOTH_KEY:
+#ifdef DEBUG_LEVEL
+                APP_LOG(APP_LOG_LEVEL_INFO, "Got BLUETOOTH_KEY value: %u", data->value->uint8);
+#endif
                 BluetoothVibrate = (data->value->uint8 > 0);
+                break;
+
+            case CGM_COLLECT_HEALTH_KEY:
+                old_state = CollectHealth;
+                CollectHealth = (data->value->uint8 > 0);
+#ifdef DEBUG_LEVEL
+                APP_LOG(APP_LOG_LEVEL_INFO, "Got COLLECT_HEALTH_KEY value: %u", data->value->uint8);
+#endif
+                if (!old_state && CollectHealth) {
+                    health_subscribe(); // was just switched on
+                } else if (old_state && !CollectHealth) {
+                    health_unsubscribe(); // was just switched off;
+                }
                 break;
 
             case CGM_VIBE_KEY:
@@ -2366,12 +2388,7 @@ static void init_cgm(void) {
 
 #if defined(PBL_HEALTH)
     start_data_log();
-// Attempt to subscribe 
-    if (!health_service_events_subscribe(health_handler, NULL)) {
-        APP_LOG(APP_LOG_LEVEL_ERROR, "Health not available!");
-    } else {
-// health ok
-    }
+    if (CollectHealth) health_subscribe();
 #else
     APP_LOG(APP_LOG_LEVEL_ERROR, "Health service not supported!");
 #endif
@@ -2380,12 +2397,40 @@ static void init_cgm(void) {
     //APP_LOG(APP_LOG_LEVEL_INFO, "INIT CODE OUT");
 }    // end init_cgm
 
+
+static void health_subscribe() {
+    // Attempt to subscribe
+#if defined(PBL_HEALTH)
+    if (!health_service_events_subscribe(health_handler, NULL)) {
+        APP_LOG(APP_LOG_LEVEL_ERROR, "Health not available!");
+    } else {
+//#ifdef DEBUG_LEVEL
+        APP_LOG(APP_LOG_LEVEL_INFO,
+                "subscribed to health");
+//#endif
+// health ok
+    }
+#endif
+}
+
+static void health_unsubscribe() {
+#if defined(PBL_HEALTH)
+    // Finish the session and sync data if appropriate
+    health_service_events_unsubscribe();
+//#ifdef DEBUG_LEVEL
+    APP_LOG(APP_LOG_LEVEL_INFO,
+                "unsubscribed from health");
+//#endif
+
+#endif
+}
+
 static void deinit_cgm(void) {
     //APP_LOG(APP_LOG_LEVEL_INFO, "DEINIT CODE IN");
 
 #if defined(PBL_HEALTH)
     // Finish the session and sync data if appropriate
-        health_service_events_unsubscribe();
+        health_unsubscribe();
         stop_data_log();
 #endif
     // unsubscribe to the tick timer service
@@ -2448,7 +2493,7 @@ static void write_log(int id, int value) {
 }
 
 void health_handler(HealthEventType event, void *context) {
-
+    if (!CollectHealth) return;
     // Which type of event occurred?
     switch (event) {
         case HealthEventSignificantUpdate:
